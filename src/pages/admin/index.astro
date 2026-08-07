@@ -1,0 +1,190 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { hasSupabaseConfig } from '../../lib/supabase';
+import { listFilmRequests } from '../../lib/requests';
+import {
+  FORMAT_LABELS,
+  PROCESS_LABELS,
+  REQUEST_STATUSES,
+  SCAN_LABELS,
+  STATUS_LABELS,
+  type FilmRequest,
+} from '../../lib/types';
+
+export const prerender = false;
+
+let requests: FilmRequest[] = [];
+let loadError = '';
+
+try {
+  requests = await listFilmRequests();
+} catch (error) {
+  loadError = error instanceof Error ? error.message : 'Не удалось загрузить заявки';
+}
+
+const storeLabel = hasSupabaseConfig() ? 'Supabase' : 'Memory (локально)';
+
+const formatWhen = (iso: string) =>
+  new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(iso));
+---
+
+<BaseLayout title="Заявки" bare>
+  <section class="admin-shell">
+    <header class="admin-bar">
+      <div>
+        <p class="eyebrow">CMS</p>
+        <h1>Заявки</h1>
+        <p class="meta">Хранилище: {storeLabel}</p>
+      </div>
+      <div class="admin-actions">
+        <a class="text-link" href="/">Сайт</a>
+        <button class="button button-ghost" type="button" id="admin-logout">Выйти</button>
+      </div>
+    </header>
+
+    {
+      loadError ? (
+        <div class="empty-state compact">
+          <p>{loadError}</p>
+        </div>
+      ) : requests.length === 0 ? (
+        <div class="empty-state compact">
+          <p>Заявок пока нет.</p>
+        </div>
+      ) : (
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Когда</th>
+                <th>Клиент</th>
+                <th>Плёнка</th>
+                <th>Статус</th>
+                <th>Заметки</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((row) => (
+                <tr data-id={row.id}>
+                  <td>
+                    <time datetime={row.created_at}>{formatWhen(row.created_at)}</time>
+                  </td>
+                  <td>
+                    <strong>{row.name}</strong>
+                    <div class="cell-muted">{row.contact}</div>
+                    {row.email && <div class="cell-muted">{row.email}</div>}
+                  </td>
+                  <td>
+                    <div>
+                      {PROCESS_LABELS[row.film_process]} · {FORMAT_LABELS[row.film_format]}
+                    </div>
+                    <div class="cell-muted">
+                      {row.rolls_count} рол. · {SCAN_LABELS[row.scan_option]}
+                    </div>
+                    {row.notes && <div class="cell-note">{row.notes}</div>}
+                  </td>
+                  <td>
+                    <select class="status-select" data-field="status" aria-label={`Статус ${row.name}`}>
+                      {REQUEST_STATUSES.map((status) => (
+                        <option value={status} selected={status === row.status}>
+                          {STATUS_LABELS[status]}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <textarea
+                      class="admin-notes"
+                      data-field="admin_notes"
+                      rows="2"
+                      placeholder="Внутренняя заметка"
+                    >{row.admin_notes ?? ''}</textarea>
+                  </td>
+                  <td class="row-actions">
+                    <button class="text-link" type="button" data-save>
+                      Сохранить
+                    </button>
+                    <button class="text-link danger" type="button" data-delete>
+                      Удалить
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+    <p class="form-status admin-toast" id="admin-toast" role="status" aria-live="polite"></p>
+  </section>
+</BaseLayout>
+
+<script>
+  const toast = document.getElementById('admin-toast');
+
+  const showToast = (message: string, state: 'ok' | 'error') => {
+    if (!(toast instanceof HTMLElement)) {
+      return;
+    }
+    toast.textContent = message;
+    toast.dataset.state = state;
+  };
+
+  document.getElementById('admin-logout')?.addEventListener('click', async () => {
+    await fetch('/api/admin/logout', { method: 'POST' });
+    window.location.href = '/admin/login';
+  });
+
+  document.querySelectorAll('tr[data-id]').forEach((row) => {
+    if (!(row instanceof HTMLTableRowElement)) {
+      return;
+    }
+    const id = row.dataset.id;
+    if (!id) {
+      return;
+    }
+
+    row.querySelector('[data-save]')?.addEventListener('click', async () => {
+      const statusEl = row.querySelector('[data-field="status"]');
+      const notesEl = row.querySelector('[data-field="admin_notes"]');
+      if (!(statusEl instanceof HTMLSelectElement) || !(notesEl instanceof HTMLTextAreaElement)) {
+        return;
+      }
+
+      const response = await fetch(`/api/admin/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: statusEl.value,
+          admin_notes: notesEl.value.trim() || null,
+        }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        showToast(data.error ?? 'Ошибка сохранения', 'error');
+        return;
+      }
+      showToast('Сохранено', 'ok');
+    });
+
+    row.querySelector('[data-delete]')?.addEventListener('click', async () => {
+      if (!confirm('Удалить заявку?')) {
+        return;
+      }
+      const response = await fetch(`/api/admin/requests/${id}`, { method: 'DELETE' });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        showToast(data.error ?? 'Ошибка удаления', 'error');
+        return;
+      }
+      row.remove();
+      showToast('Удалено', 'ok');
+    });
+  });
+</script>

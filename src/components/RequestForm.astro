@@ -1,0 +1,122 @@
+---
+import { FORMAT_LABELS, PROCESS_LABELS, SCAN_LABELS } from '../lib/types';
+---
+
+<form class="request-form" id="film-request-form" novalidate>
+  <div class="form-grid">
+    <label>
+      <span>Имя</span>
+      <input name="name" type="text" autocomplete="name" required minlength="2" />
+    </label>
+    <label>
+      <span>Телефон или Telegram</span>
+      <input name="contact" type="text" autocomplete="tel" required minlength="3" placeholder="+7… или @username" />
+    </label>
+    <label>
+      <span>Email <em>(необязательно)</em></span>
+      <input name="email" type="email" autocomplete="email" />
+    </label>
+    <label>
+      <span>Количество роликов</span>
+      <input name="rolls_count" type="number" min="1" max="100" value="1" required />
+    </label>
+    <label>
+      <span>Процесс</span>
+      <select name="film_process" required>
+        {
+          Object.entries(PROCESS_LABELS).map(([value, label]) => (
+            <option value={value}>{label}</option>
+          ))
+        }
+      </select>
+    </label>
+    <label>
+      <span>Формат</span>
+      <select name="film_format" required>
+        {
+          Object.entries(FORMAT_LABELS).map(([value, label]) => (
+            <option value={value}>{label}</option>
+          ))
+        }
+      </select>
+    </label>
+    <label class="span-2">
+      <span>Скан</span>
+      <select name="scan_option" required>
+        {
+          Object.entries(SCAN_LABELS).map(([value, label]) => (
+            <option value={value} selected={value === 'standard'}>
+              {label}
+            </option>
+          ))
+        }
+      </select>
+    </label>
+    <label class="span-2">
+      <span>Комментарий</span>
+      <textarea name="notes" rows="4" placeholder="Push +1, особые пожелания, удобное время…" />
+    </label>
+  </div>
+
+  <div class="form-footer">
+    <button class="button" type="submit" data-submit>
+      Отправить заявку
+    </button>
+    <p class="form-status" data-status role="status" aria-live="polite"></p>
+  </div>
+</form>
+
+<script>
+  const form = document.getElementById('film-request-form');
+  if (form instanceof HTMLFormElement) {
+    const status = form.querySelector('[data-status]');
+    const submit = form.querySelector('[data-submit]');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!(status instanceof HTMLElement) || !(submit instanceof HTMLButtonElement)) {
+        return;
+      }
+
+      status.textContent = '';
+      status.dataset.state = '';
+      submit.disabled = true;
+
+      const formData = new FormData(form);
+      const payload = {
+        name: String(formData.get('name') ?? ''),
+        contact: String(formData.get('contact') ?? ''),
+        email: String(formData.get('email') ?? ''),
+        film_process: String(formData.get('film_process') ?? ''),
+        film_format: String(formData.get('film_format') ?? ''),
+        rolls_count: Number(formData.get('rolls_count') ?? 1),
+        scan_option: String(formData.get('scan_option') ?? ''),
+        notes: String(formData.get('notes') ?? ''),
+      };
+
+      try {
+        const response = await fetch('/api/requests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = (await response.json()) as { error?: string };
+        if (!response.ok) {
+          throw new Error(data.error ?? 'Не удалось отправить');
+        }
+        form.reset();
+        const rolls = form.elements.namedItem('rolls_count');
+        if (rolls instanceof HTMLInputElement) {
+          rolls.value = '1';
+        }
+        status.textContent = 'Заявка принята. Мы свяжемся с вами.';
+        status.dataset.state = 'ok';
+      } catch (error) {
+        status.textContent = error instanceof Error ? error.message : 'Ошибка отправки';
+        status.dataset.state = 'error';
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  }
+</script>
