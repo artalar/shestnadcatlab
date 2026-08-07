@@ -2,7 +2,8 @@
 import { FORMAT_LABELS, PROCESS_LABELS, SCAN_LABELS } from '../lib/types';
 ---
 
-<form class="request-form" id="film-request-form" novalidate>
+<form class="request-form" id="film-request-form" method="post" action="/api/requests" novalidate>
+  <p class="form-status" data-banner role="status" aria-live="polite"></p>
   <div class="form-grid">
     <label>
       <span>Имя</span>
@@ -70,7 +71,22 @@ import { FORMAT_LABELS, PROCESS_LABELS, SCAN_LABELS } from '../lib/types';
   const form = document.getElementById('film-request-form');
   if (form instanceof HTMLFormElement) {
     const status = form.querySelector('[data-status]');
+    const banner = form.querySelector('[data-banner]');
     const submit = form.querySelector('[data-submit]');
+    const params = new URLSearchParams(window.location.search);
+
+    if (banner instanceof HTMLElement) {
+      if (params.get('sent') === '1') {
+        banner.textContent = 'Заявка принята. Мы свяжемся с вами.';
+        banner.dataset.state = 'ok';
+      } else if (params.get('error')) {
+        banner.textContent =
+          params.get('error') === 'send'
+            ? 'Не удалось отправить заявку'
+            : String(params.get('error'));
+        banner.dataset.state = 'error';
+      }
+    }
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -97,7 +113,10 @@ import { FORMAT_LABELS, PROCESS_LABELS, SCAN_LABELS } from '../lib/types';
       try {
         const response = await fetch('/api/requests', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
           body: JSON.stringify(payload),
         });
         const data = (await response.json()) as { error?: string };
