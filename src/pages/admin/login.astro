@@ -1,0 +1,57 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { isAdminAuthenticated } from '../../lib/auth';
+
+export const prerender = false;
+
+if (isAdminAuthenticated(Astro.cookies)) {
+  return Astro.redirect('/admin');
+}
+---
+
+<BaseLayout title="Вход" bare>
+  <section class="admin-login section">
+    <p class="eyebrow">Шестнадцать · Админ</p>
+    <h1>Вход по ключу</h1>
+    <p class="lead">Один оператор. Один ключ. Никаких аккаунтов.</p>
+    <form class="login-form" id="admin-login-form">
+      <label>
+        <span>Секретный ключ</span>
+        <input name="secret" type="password" autocomplete="current-password" required />
+      </label>
+      <button class="button" type="submit">Войти</button>
+      <p class="form-status" data-status role="status" aria-live="polite"></p>
+    </form>
+    <p class="meta"><a href="/">← На сайт</a></p>
+  </section>
+</BaseLayout>
+
+<script>
+  const form = document.getElementById('admin-login-form');
+  if (form instanceof HTMLFormElement) {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const status = form.querySelector('[data-status]');
+      const secretInput = form.elements.namedItem('secret');
+      if (!(status instanceof HTMLElement) || !(secretInput instanceof HTMLInputElement)) {
+        return;
+      }
+
+      status.textContent = '';
+      status.dataset.state = '';
+
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: secretInput.value }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        status.textContent = data.error ?? 'Ошибка входа';
+        status.dataset.state = 'error';
+        return;
+      }
+      window.location.href = '/admin';
+    });
+  }
+</script>
